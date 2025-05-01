@@ -7,6 +7,8 @@ import re
 import io
 import base64
 from lead_engine_generator import LeadEngineGenerator
+from openpyxl.utils import get_column_letter
+from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
 # Set page configuration
 st.set_page_config(
@@ -65,6 +67,33 @@ st.markdown("""
         margin-bottom: 1rem;
         border: 1px solid #E5E7EB;
     }
+    .download-button {
+        display: inline-block;
+        background-color: #1E3A8A;
+        color: white !important;
+        padding: 0.5rem 1rem;
+        text-decoration: none;
+        border-radius: 0.25rem;
+        font-weight: bold;
+        margin-top: 1rem;
+        transition: background-color 0.3s;
+    }
+    .download-button:hover {
+        background-color: #3B82F6;
+    }
+    /* Add styling for post preview content */
+    .post-content {
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 5px;
+        border-left: 3px solid #1E3A8A;
+        margin-bottom: 10px;
+    }
+    /* Override Streamlit default expander styling */
+    .streamlit-expanderHeader {
+        font-weight: bold;
+        color: #1E3A8A;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -107,6 +136,7 @@ with st.sidebar:
     # Asset link input with conditional display
     has_asset = st.checkbox("Include downloadable asset", value=True)
     asset_link = None
+    pdf_url = None
     if has_asset:
         asset_link = st.text_input("Asset Link", help="URL where leads can download your asset")
         
@@ -115,8 +145,6 @@ with st.sidebar:
             "PDF URL for Content Extraction (Optional)", 
             help="Link to a PDF that contains relevant content for your marketing"
         )
-    else:
-        pdf_url = None
     
     # Number of posts selection
     num_posts = st.slider(
@@ -193,7 +221,7 @@ def generate_content():
         progress_bar.progress(100)
         return False
 
-# Function to generate Excel file in memory
+# Function to generate Excel file in memory with proper styling
 def generate_excel_file(generator):
     # Create BytesIO object to hold Excel data
     output = io.BytesIO()
@@ -301,27 +329,95 @@ def generate_excel_file(generator):
             df = pd.DataFrame(channel_data)
             df.to_excel(writer, sheet_name=channel, index=False)
             
-            # Apply styling (simplified for in-memory version)
-            worksheet = writer.sheets[channel]
-            for col_num, column_title in enumerate(df.columns, 1):
-                if column_title in ["Post Copy", "Value Proposition"]:
-                    worksheet.column_dimensions[get_column_letter(col_num)].width = 40
-                elif column_title in ["Image Copy", "CTA", "Link"]:
-                    worksheet.column_dimensions[get_column_letter(col_num)].width = 25
-                else:
-                    worksheet.column_dimensions[get_column_letter(col_num)].width = 15
+            # Apply styling
+            _apply_excel_styling(writer.sheets[channel], df)
     
     # Get the Excel data
     output.seek(0)
     return output.getvalue()
 
-# Helper function for column letter (since we're not importing openpyxl directly)
-def get_column_letter(col_num):
-    letters = ""
-    while col_num > 0:
-        col_num, remainder = divmod(col_num - 1, 26)
-        letters = chr(65 + remainder) + letters
-    return letters
+# Function to apply Excel styling
+def _apply_excel_styling(worksheet, df):
+    """Apply formatting to Excel worksheet"""
+    # Define styles
+    header_fill = PatternFill(start_color="000000", end_color="000000", fill_type="solid")  # Black background
+    header_font = Font(color="FFFFFF", bold=True)  # White text
+    post_num_fill = PatternFill(start_color="000000", end_color="000000", fill_type="solid")  # Black background
+    post_num_font = Font(color="FFFFFF", bold=True)  # White text
+    funnel_stage_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")  # Blue background
+    funnel_stage_font = Font(color="FFFFFF", bold=True)  # White text
+    border = Border(
+        left=Side(border_style="thin"), 
+        right=Side(border_style="thin"),
+        top=Side(border_style="thin"),
+        bottom=Side(border_style="thin")
+    )
+    
+    # Apply header styling
+    for col_num, column_title in enumerate(df.columns, 1):
+        cell = worksheet.cell(row=1, column=col_num)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = border
+        
+        # Adjust column width
+        column_letter = get_column_letter(col_num)
+        if column_title in ["Post Copy", "Value Proposition"]:
+            worksheet.column_dimensions[column_letter].width = 40
+        elif column_title in ["Image Copy", "CTA", "Link"]:
+            worksheet.column_dimensions[column_letter].width = 25
+        else:
+            worksheet.column_dimensions[column_letter].width = 15
+    
+    # Apply funnel stage styling and borders to all cells
+    for row_num in range(2, len(df) + 2):  # +2 because Excel is 1-indexed and we have a header row
+        for col_num in range(1, len(df.columns) + 1):
+            cell = worksheet.cell(row=row_num, column=col_num)
+            cell.border = border
+            
+            # Apply section header styling (using Type column for section headers)
+            if col_num == len(df.columns) and cell.value in ["Brand", "Demand Gen", "Demand Capture"]:  # Type column
+                # Find the first cell in this row
+                first_cell = worksheet.cell(row=row_num, column=1)
+                first_cell.fill = funnel_stage_fill
+                first_cell.font = funnel_stage_font
+                first_cell.alignment = Alignment(horizontal='center', vertical='center')
+                # Merge cells for the section header
+                worksheet.merge_cells(start_row=row_num, start_column=1, end_row=row_num, end_column=len(df.columns))
+                # Set the value in the merged cell
+                first_cell.value = cell.value
+                cell.value = ""  # Clear the original cell
+            
+            # Apply styling to Post # column
+            if col_num == 1 and cell.value and isinstance(cell.value, (int, float)):  # Post number column
+                cell.fill = post_num_fill
+                cell.font = post_num_font
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Set text wrapping for content cells
+            content_columns = [col for col, title in enumerate(df.columns, 1) 
+                              if title in ["Value Proposition", "Post Copy", "Image Copy", "CTA"]]
+            if col_num in content_columns:
+                cell.alignment = Alignment(wrapText=True, vertical='top')
+    
+    # Auto-fit row heights
+    for row_num in range(2, len(df) + 2):
+        max_text_lines = 1
+        content_columns = [col for col, title in enumerate(df.columns, 1) 
+                          if title in ["Value Proposition", "Post Copy", "Image Copy", "CTA"]]
+        for col_num in content_columns:  # Check text length in main content columns
+            cell_value = worksheet.cell(row=row_num, column=col_num).value
+            if cell_value:
+                lines = len(str(cell_value).split('\n'))
+                max_text_lines = max(max_text_lines, lines)
+                # Also consider approximate wrapping
+                approx_lines = len(str(cell_value)) // 40 + 1  # 40 chars per line approx
+                max_text_lines = max(max_text_lines, approx_lines)
+        
+        # Set row height (15 points per line of text, minimum 20)
+        row_height = max(20, 15 * max_text_lines)
+        worksheet.row_dimensions[row_num].height = row_height
 
 # Create download link for Excel file
 def get_excel_download_link(excel_data, filename="marketing_funnel.xlsx"):
@@ -329,7 +425,7 @@ def get_excel_download_link(excel_data, filename="marketing_funnel.xlsx"):
     href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{filename}" class="download-button">Download Excel File</a>'
     return href
 
-# Display content preview
+# Display content preview with enhanced styling
 def display_content_preview():
     st.markdown('<div class="sub-header">Content Preview</div>', unsafe_allow_html=True)
     
@@ -358,25 +454,25 @@ def display_content_preview():
                                     # Left column: Post Copy
                                     with cols[0]:
                                         st.markdown("**Post Copy:**")
-                                        st.markdown(f"<div style='background-color:#f8f9fa;padding:10px;border-radius:5px;'>{post.get('Post Copy', '')}</div>", unsafe_allow_html=True)
+                                        st.markdown(f"<div class='post-content'>{post.get('Post Copy', '')}</div>", unsafe_allow_html=True)
                                     
                                     # Right column: Other details
                                     with cols[1]:
                                         if "Value Proposition" in post and post["Value Proposition"]:
                                             st.markdown("**Value Proposition:**")
-                                            st.markdown(f"<div style='background-color:#f8f9fa;padding:10px;border-radius:5px;'>{post.get('Value Proposition', '')}</div>", unsafe_allow_html=True)
+                                            st.markdown(f"<div class='post-content'>{post.get('Value Proposition', '')}</div>", unsafe_allow_html=True)
                                         
                                         if "Image Copy" in post and post["Image Copy"]:
                                             st.markdown("**Image Copy:**")
-                                            st.markdown(f"<div style='background-color:#f8f9fa;padding:10px;border-radius:5px;'>{post.get('Image Copy', '')}</div>", unsafe_allow_html=True)
+                                            st.markdown(f"<div class='post-content'>{post.get('Image Copy', '')}</div>", unsafe_allow_html=True)
                                         
                                         if "CTA" in post and post["CTA"]:
                                             st.markdown("**Call to Action:**")
-                                            st.markdown(f"<div style='background-color:#f8f9fa;padding:10px;border-radius:5px;'>{post.get('CTA', '')}</div>", unsafe_allow_html=True)
+                                            st.markdown(f"<div class='post-content'>{post.get('CTA', '')}</div>", unsafe_allow_html=True)
                                         
                                         if "Link" in post and post["Link"]:
                                             st.markdown("**Link:**")
-                                            st.markdown(f"<div style='background-color:#f8f9fa;padding:10px;border-radius:5px;'>{post.get('Link', '')}</div>", unsafe_allow_html=True)
+                                            st.markdown(f"<div class='post-content'>{post.get('Link', '')}</div>", unsafe_allow_html=True)
                                         
                                         if "Type" in post and post["Type"]:
                                             st.markdown(f"**Type:** {post.get('Type', '')}")
