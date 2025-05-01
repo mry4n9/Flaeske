@@ -18,6 +18,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Hardcoded API key - Replace this with your actual API key
+OPENAI_API_KEY = "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"
+
 # Custom CSS for styling
 st.markdown("""
 <style>
@@ -66,6 +69,7 @@ st.markdown("""
         padding: 1rem;
         margin-bottom: 1rem;
         border: 1px solid #E5E7EB;
+        height: 100%;  /* Make all boxes the same height */
     }
     .download-button {
         display: inline-block;
@@ -81,18 +85,18 @@ st.markdown("""
     .download-button:hover {
         background-color: #3B82F6;
     }
-    /* Add styling for post preview content */
-    .post-content {
-        background-color: #f8f9fa;
-        padding: 10px;
-        border-radius: 5px;
-        border-left: 3px solid #1E3A8A;
-        margin-bottom: 10px;
+    .status-text {
+        margin-top: 0.5rem;
+        margin-bottom: 0.5rem;
+        font-size: 1rem;
     }
-    /* Override Streamlit default expander styling */
-    .streamlit-expanderHeader {
-        font-weight: bold;
-        color: #1E3A8A;
+    /* Make columns equal height */
+    .equal-height {
+        display: flex;
+        flex-direction: column;
+    }
+    .equal-height > div {
+        flex: 1;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -119,9 +123,6 @@ if 'processing_time' not in st.session_state:
 # Create sidebar for inputs
 with st.sidebar:
     st.markdown('<div class="sub-header">Configuration</div>', unsafe_allow_html=True)
-    
-    # OpenAI API Key input
-    api_key = st.text_input("OpenAI API Key", type="password", help="Your OpenAI API key is required to generate content")
     
     # Website URL input
     website_url = st.text_input("Client's Website URL", help="Enter the full URL including http:// or https://")
@@ -172,26 +173,47 @@ def generate_content():
     progress_container = st.container()
     progress_bar = progress_container.progress(0)
     status_text = progress_container.empty()
+    details_text = progress_container.empty()
     
     try:
         # Initialize the generator
         status_text.text("Initializing Lead Engine Generator...")
-        generator = LeadEngineGenerator(api_key)
+        generator = LeadEngineGenerator(OPENAI_API_KEY)
         st.session_state.generator = generator
         progress_bar.progress(10)
         
         # Set lead purpose
         status_text.text(f"Setting lead purpose to: {lead_purpose}")
         generator.set_lead_purpose(lead_purpose, asset_link)
-        progress_bar.progress(20)
+        progress_bar.progress(15)
         
         # Start timing
         start_time = time.time()
         
+        # Show more detailed progress during generation
+        status_text.text("Analyzing website content...")
+        details_text.markdown("<div class='status-text'>Extracting company information and value propositions...</div>", unsafe_allow_html=True)
+        progress_bar.progress(20)
+        
+        # Update progress as we go through the funnel generation
+        # These are just placeholders - actual implementation would depend on how LeadEngineGenerator works
+        time.sleep(1)  # Simulating analysis time
+        status_text.text("Generating brand content...")
+        details_text.markdown("<div class='status-text'>Creating value propositions and brand messaging...</div>", unsafe_allow_html=True)
+        progress_bar.progress(40)
+        
+        time.sleep(1)  # Simulating generation time
+        status_text.text("Generating demand generation content...")
+        details_text.markdown("<div class='status-text'>Creating educational posts and thought leadership content...</div>", unsafe_allow_html=True)
+        progress_bar.progress(60)
+        
+        time.sleep(1)  # Simulating generation time
+        status_text.text("Generating demand capture content...")
+        details_text.markdown("<div class='status-text'>Creating conversion-focused posts with strong CTAs...</div>", unsafe_allow_html=True)
+        progress_bar.progress(80)
+        
         # Generate content
-        status_text.text("Generating content funnel... This may take a few minutes.")
         success = generator.generate_funnel_content(website_url, pdf_url, num_posts, channel_options)
-        progress_bar.progress(90)
         
         if success:
             # Store the funnel content in session state
@@ -200,6 +222,7 @@ def generate_content():
             
             # Create an in-memory Excel file
             status_text.text("Preparing Excel file for download...")
+            details_text.markdown("<div class='status-text'>Formatting and styling your content for easy use...</div>", unsafe_allow_html=True)
             excel_data = generate_excel_file(generator)
             st.session_state.excel_data = excel_data
             
@@ -208,16 +231,19 @@ def generate_content():
             
             progress_bar.progress(100)
             status_text.text("Content generation completed!")
+            details_text.empty()
             
             # Return success
             return True
         else:
             status_text.error("Failed to generate content funnel.")
+            details_text.empty()
             progress_bar.progress(100)
             return False
             
     except Exception as e:
         status_text.error(f"Error: {str(e)}")
+        details_text.empty()
         progress_bar.progress(100)
         return False
 
@@ -425,62 +451,6 @@ def get_excel_download_link(excel_data, filename="marketing_funnel.xlsx"):
     href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{filename}" class="download-button">Download Excel File</a>'
     return href
 
-# Display content preview with enhanced styling
-def display_content_preview():
-    st.markdown('<div class="sub-header">Content Preview</div>', unsafe_allow_html=True)
-    
-    # Create tabs for each channel
-    if st.session_state.funnel_content:
-        tabs = st.tabs(list(st.session_state.funnel_content.keys()))
-        
-        for i, channel in enumerate(st.session_state.funnel_content.keys()):
-            with tabs[i]:
-                # Display stages as expandable sections
-                for stage in ["Brand", "Demand Gen", "Demand Capture"]:
-                    if stage in st.session_state.funnel_content[channel]:
-                        with st.expander(f"{stage} Content", expanded=(stage == "Brand")):
-                            # Display posts
-                            posts = st.session_state.funnel_content[channel][stage]
-                            if posts and isinstance(posts, list):
-                                for j, post in enumerate(posts):
-                                    if not isinstance(post, dict):
-                                        continue
-                                        
-                                    st.markdown(f"#### Post {j+1}")
-                                    
-                                    # Create columns for post details
-                                    cols = st.columns([3, 2])
-                                    
-                                    # Left column: Post Copy
-                                    with cols[0]:
-                                        st.markdown("**Post Copy:**")
-                                        st.markdown(f"<div class='post-content'>{post.get('Post Copy', '')}</div>", unsafe_allow_html=True)
-                                    
-                                    # Right column: Other details
-                                    with cols[1]:
-                                        if "Value Proposition" in post and post["Value Proposition"]:
-                                            st.markdown("**Value Proposition:**")
-                                            st.markdown(f"<div class='post-content'>{post.get('Value Proposition', '')}</div>", unsafe_allow_html=True)
-                                        
-                                        if "Image Copy" in post and post["Image Copy"]:
-                                            st.markdown("**Image Copy:**")
-                                            st.markdown(f"<div class='post-content'>{post.get('Image Copy', '')}</div>", unsafe_allow_html=True)
-                                        
-                                        if "CTA" in post and post["CTA"]:
-                                            st.markdown("**Call to Action:**")
-                                            st.markdown(f"<div class='post-content'>{post.get('CTA', '')}</div>", unsafe_allow_html=True)
-                                        
-                                        if "Link" in post and post["Link"]:
-                                            st.markdown("**Link:**")
-                                            st.markdown(f"<div class='post-content'>{post.get('Link', '')}</div>", unsafe_allow_html=True)
-                                        
-                                        if "Type" in post and post["Type"]:
-                                            st.markdown(f"**Type:** {post.get('Type', '')}")
-                                    
-                                    st.markdown("---")
-                            else:
-                                st.info(f"No {stage} posts found for {channel}")
-
 # Display main content area with instructions or results
 main_content = st.container()
 
@@ -496,64 +466,62 @@ with main_content:
         </div>
         """, unsafe_allow_html=True)
         
-        # Feature boxes to fill the empty space
-        col1, col2 = st.columns(2)
+        # Feature boxes to fill the empty space - fixed alignment with equal height
+        st.markdown("""
+        <div style="display: flex; flex-wrap: wrap; gap: 20px;">
+            <div style="flex: 1; min-width: 300px;">
+                <div class="feature-box">
+                    <h3>🎯 Complete Marketing Funnel</h3>
+                    <p>Generate content for all stages of your marketing funnel:</p>
+                    <ul>
+                        <li><b>Brand</b>: Establish your client's unique value proposition</li>
+                        <li><b>Demand Gen</b>: Educate and nurture potential leads</li>
+                        <li><b>Demand Capture</b>: Convert leads with compelling CTAs</li>
+                    </ul>
+                </div>
+            </div>
+            <div style="flex: 1; min-width: 300px;">
+                <div class="feature-box">
+                    <h3>📱 Multi-Channel Support</h3>
+                    <p>Create tailored content for various social platforms:</p>
+                    <ul>
+                        <li><b>LinkedIn</b>: Professional, business-focused content</li>
+                        <li><b>Facebook</b>: Engaging content with appropriate emojis</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
         
-        with col1:
-            st.markdown("""
-            <div class="feature-box">
-                <h3>🎯 Complete Marketing Funnel</h3>
-                <p>Generate content for all stages of your marketing funnel:</p>
-                <ul>
-                    <li><b>Brand</b>: Establish your client's unique value proposition</li>
-                    <li><b>Demand Gen</b>: Educate and nurture potential leads</li>
-                    <li><b>Demand Capture</b>: Convert leads with compelling CTAs</li>
-                </ul>
+        <div style="display: flex; flex-wrap: wrap; gap: 20px; margin-top: 20px;">
+            <div style="flex: 1; min-width: 300px;">
+                <div class="feature-box">
+                    <h3>🤖 AI-Powered Content</h3>
+                    <p>Leverage OpenAI's models to generate:</p>
+                    <ul>
+                        <li><b>Post Copy</b>: Engaging text tailored to each platform</li>
+                        <li><b>Image Copy</b>: Suggestions for accompanying visuals</li>
+                        <li><b>CTAs</b>: Compelling calls-to-action</li>
+                        <li><b>Value Propositions</b>: Clear statements of client value</li>
+                    </ul>
+                </div>
             </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown("""
-            <div class="feature-box">
-                <h3>📱 Multi-Channel Support</h3>
-                <p>Create tailored content for various social platforms:</p>
-                <ul>
-                    <li><b>LinkedIn</b>: Professional, business-focused content</li>
-                    <li><b>Facebook</b>: Engaging content with appropriate emojis</li>
-                </ul>
+            <div style="flex: 1; min-width: 300px;">
+                <div class="feature-box">
+                    <h3>📊 Ready-to-Use Format</h3>
+                    <p>Export your content to Excel with:</p>
+                    <ul>
+                        <li>Organized sheets for each platform</li>
+                        <li>Clearly structured funnel stages</li>
+                        <li>Formatted for easy sharing with clients</li>
+                    </ul>
+                </div>
             </div>
-            """, unsafe_allow_html=True)
-            
-        with col2:
-            st.markdown("""
-            <div class="feature-box">
-                <h3>🤖 AI-Powered Content</h3>
-                <p>Leverage OpenAI's models to generate:</p>
-                <ul>
-                    <li><b>Post Copy</b>: Engaging text tailored to each platform</li>
-                    <li><b>Image Copy</b>: Suggestions for accompanying visuals</li>
-                    <li><b>CTAs</b>: Compelling calls-to-action</li>
-                    <li><b>Value Propositions</b>: Clear statements of client value</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown("""
-            <div class="feature-box">
-                <h3>📊 Ready-to-Use Format</h3>
-                <p>Export your content to Excel with:</p>
-                <ul>
-                    <li>Organized sheets for each platform</li>
-                    <li>Clearly structured funnel stages</li>
-                    <li>Formatted for easy sharing with clients</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
+        </div>
+        """, unsafe_allow_html=True)
 
     # Main app logic - handle the generate button
     if generate_button:
-        if not api_key:
-            st.error("Please enter your OpenAI API key.")
-        elif not website_url:
+        if not website_url:
             st.error("Please enter the client's website URL.")
         elif not channel_options:
             st.error("Please select at least one social media channel.")
@@ -585,10 +553,7 @@ with main_content:
                 {get_excel_download_link(st.session_state.excel_data, filename)}
             </div>
             """, unsafe_allow_html=True)
-        
-        # Display content preview
-        display_content_preview()
 
 # Footer
 st.markdown("---")
-st.markdown("Made with ❤️ by Lead Engine Content Generator | Powered by OpenAI")
+st.markdown("Made with ❤️ by Lead Engine Content Generator | Powered by Grøntsagssmoothie")
